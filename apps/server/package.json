@@ -1,0 +1,39 @@
+{
+  "name": "@sm-office/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json && node -e \"const fs=require('fs'); fs.mkdirSync('dist/db/migrations',{recursive:true}); fs.copyFileSync('src/db/migrations/0001_init.sql','dist/db/migrations/0001_init.sql');\"",
+    "test": "vitest run",
+    "seed:admin": "tsx src/cli/seed-admin.ts",
+    "reset:password": "tsx src/cli/reset-password.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.750.0",
+    "@aws-sdk/s3-request-presigner": "^3.750.0",
+    "@fastify/cors": "^11.0.0",
+    "@fastify/multipart": "^10.0.0",
+    "@fastify/static": "^10.1.11",
+    "@fastify/websocket": "^11.0.0",
+    "@sm-office/shared": "*",
+    "better-sqlite3": "^11.10.0",
+    "drizzle-orm": "^0.38.4",
+    "fastify": "^5.2.0",
+    "node-cron": "^3.0.3",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.10.2",
+    "@types/node-cron": "^3.0.11",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.8",
+    "ws": "^8.18.0"
+  }
+}

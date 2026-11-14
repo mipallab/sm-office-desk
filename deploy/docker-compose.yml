@@ -1,0 +1,82 @@
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: api
+    image: sm-office-desk-api:latest
+    restart: unless-stopped
+    init: true
+    mem_limit: 512m
+    stop_grace_period: 30s
+    env_file:
+      - ./.env.production
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3000"
+      SQLITE_PATH: /data/office.db
+      LOCAL_STORAGE_PATH: /data/screenshots
+    expose:
+      - "3000"
+    volumes:
+      - sm_office_data:/data
+    networks:
+      - sm_office_net
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: caddy
+    image: sm-office-desk-caddy:latest
+    restart: unless-stopped
+    mem_limit: 128m
+    depends_on:
+      api:
+        condition: service_healthy
+    # Keep R2 / JWT secrets completely out of the Caddy container.
+    # Pass `--env-file deploy/.env.production` to Compose so `${SITE_ADDRESS}` interpolates.
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - sm_office_net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  sm_office_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  sm_office_net:
+    driver: bridge

@@ -1,0 +1,139 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "SM Office Desk",
+  "version": "0.1.0",
+  "identifier": "com.smoffice.desk",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "SM Office Desk",
+        "width": 360,
+        "height": 480,
+        "minWidth": 360,
+        "minHeight": 480,
+        "maxWidth": 360,
+        "maxHeight": 480,
+        "resizable": false,
+        "maximizable": false,
+        "fullscreen": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "publisher": "SM Office Desk",
+    "category": "Productivity",
+    "copyright": "Copyright (c) 2026 SM Office Desk",
+    "shortDescription": "Lightweight employee work tracker with verified screenshots and consented live location.",
+    "longDescription": "SM Office Desk is a lightweight 64-bit desktop work-session tracker built with Tauri v2, featuring monotonic work timers, mandatory multi-monitor WebP screenshot auditing, admin on-demand capture, and strictly employee-consented live location sharing.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "allowDowngrades": true,
+      "bundleVCRuntime": false,
+      "certificateThumbprint": null,
+      "digestAlgorithm": null,
+      "timestampUrl": null,
+      "tsp": false,
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "English"
+        ],
+        "displayLanguageSelector": false,
+        "compression": "lzma",
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico"
+      },
+      "wix": {
+        "language": "en-US",
+        "upgradeCode": "8cce718a-39d9-5f9a-b3b4-4d9b094e380b"
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "12.0",
+      "signingIdentity": null,
+      "hardenedRuntime": true,
+      "dmg": {
+        "windowSize": {
+          "width": 660,
+          "height": 400
+        },
+        "appPosition": {
+          "x": 180,
+          "y": 170
+        },
+        "applicationFolderPosition": {
+          "x": 480,
+          "y": 170
+        }
+      }
+    },
+    "linux": {
+      "deb": {
+        "section": "utils",
+        "priority": "optional",
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libayatana-appindicator3-1",
+          "libpipewire-0.3-0",
+          "libdbus-1-3",
+          "libxcb1",
+          "libxrandr2",
+          "geoclue-2.0",
+          "libglib2.0-bin"
+        ],
+        "recommends": [
+          "xdg-desktop-portal"
+        ]
+      },
+      "rpm": {
+        "epoch": 0,
+        "release": "1",
+        "compression": {
+          "type": "gzip",
+          "level": 6
+        },
+        "depends": [
+          "webkit2gtk4.1",
+          "gtk3",
+          "libayatana-appindicator-gtk3",
+          "pipewire-libs",
+          "dbus-libs",
+          "libxcb",
+          "libXrandr",
+          "geoclue2",
+          "glib2"
+        ],
+        "recommends": [
+          "xdg-desktop-portal"
+        ]
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    }
+  }
+}

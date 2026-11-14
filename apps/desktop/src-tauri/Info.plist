@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>LSMinimumSystemVersion</key>
+  <string>12.0</string>
+  <key>LSUIElement</key>
+  <false/>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>NSScreenCaptureUsageDescription</key>
+  <string>SM Office Desk captures periodic (10-30 minute) and admin-requested work-session screenshots across your active displays while your work timer is running for mandatory attendance auditing.</string>
+  <key>NSLocationWhenInUseUsageDescription</key>
+  <string>SM Office Desk optionally shares your live location with your organization only while your work timer is active and you explicitly toggle Share Live Location ON.</string>
+</dict>
+</plist>

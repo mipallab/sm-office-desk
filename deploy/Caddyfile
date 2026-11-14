@@ -1,0 +1,59 @@
+{$SITE_ADDRESS:localhost} {
+	encode zstd gzip
+
+	# Security headers tailored for Admin SPA + OpenStreetMap + Leaflet + R2 + WSS
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(self), payment=()"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://*.r2.cloudflarestorage.com; font-src 'self' data:; connect-src 'self' wss: ws:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+		-Server
+	}
+
+	@https protocol https
+	header @https Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+	# Never expose /data, screenshot storage, or dotfiles (allow ACME well-known if needed)
+	@blocked {
+		path /data /data/* /.* */.*
+		not path /.well-known/*
+	}
+	handle @blocked {
+		respond 404
+	}
+
+	# Backend REST API (includes /api/health and authenticated /api/admin/screenshots/:id/image stream)
+	@api path /api /api/*
+	handle @api {
+		reverse_proxy api:3000 {
+			flush_interval -1
+			transport http {
+				read_timeout 60s
+				write_timeout 60s
+			}
+		}
+	}
+
+	# Persistent WebSocket hub (Admin dashboard live updates + Desktop CAPTURE_NOW)
+	handle /ws {
+		reverse_proxy api:3000 {
+			flush_interval -1
+		}
+	}
+
+	# Content-hashed static JS/CSS bundles built by Vite
+	handle /assets/* {
+		root * /srv/admin
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	# Admin SPA static root & HTML5 History API fallback
+	handle {
+		root * /srv/admin
+		try_files {path} /index.html
+		header Cache-Control "no-cache, no-store, must-revalidate"
+		file_server
+	}
+}

@@ -1,0 +1,59 @@
+# Dependencies & Build Outputs
+**/node_modules
+**/dist
+**/build
+**/out
+**/.vite
+**/*.tsbuildinfo
+
+# Version Control, CI & Agent Tooling
+.git
+.gitignore
+.github
+.agents
+docs
+
+# Environment & Secrets (never bake secrets into images)
+.env
+.env.*
+deploy/.env
+deploy/.env.*
+!deploy/.env.production.example
+
+# Runtime Data, SQLite Files & Backups
+data
+backups
+logs
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.log
+npm-debug.log*
+
+# Desktop App (preserve apps/desktop/package.json for root npm ci workspace resolution)
+apps/desktop/src-tauri
+apps/desktop/src
+apps/desktop/tests
+apps/desktop/index.html
+apps/desktop/tsconfig.json
+apps/desktop/vite.config.ts
+apps/desktop/vitest.config.ts
+*.AppImage
+*.deb
+*.dmg
+*.msi
+*.exe
+
+# Server Tests
+apps/server/tests
+apps/server/vitest.config.ts
+
+# Deploy host scripts (executed on VPS host, not inside containers)
+deploy/scripts
+
+# OS Junk
+.DS_Store
+Thumbs.db

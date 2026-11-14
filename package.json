@@ -1,0 +1,28 @@
+{
+  "name": "sm-office-desk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SM Office Desk — Employee work tracking, screenshot verification, consented live location, and salary reporting monorepo.",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
+  "scripts": {
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "dev:server": "npm --workspace=@sm-office/server run dev",
+    "dev:admin": "npm --workspace=@sm-office/admin run dev",
+    "start": "node apps/server/dist/index.js",
+    "seed:admin": "npm --workspace=@sm-office/server run seed:admin --",
+    "reset:password": "npm --workspace=@sm-office/server run reset:password --"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}
