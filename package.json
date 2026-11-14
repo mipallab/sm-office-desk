@@ -13,7 +13,8 @@
   },
   "scripts": {
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm --workspace=@sm-office/shared run build && npm --workspace=@sm-office/admin run build && npm --workspace=@sm-office/server run build",
+    "build:all": "npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "dev:server": "npm --workspace=@sm-office/server run dev",
