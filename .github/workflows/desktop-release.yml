@@ -1,0 +1,471 @@
+name: Desktop Release Build (64-bit Only)
+
+on:
+  push:
+    tags:
+      - 'desktop-v*'
+  pull_request:
+    paths:
+      - 'apps/desktop/**'
+      - 'packages/shared/**'
+      - '.github/workflows/desktop-release.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify Shared, Frontend & Rust Tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Build @sm-office/shared
+        run: npm --workspace=@sm-office/shared run build
+
+      - name: Typecheck @sm-office/desktop
+        run: npm --workspace=@sm-office/desktop run typecheck
+
+      - name: Run @sm-office/desktop unit tests
+        run: npm --workspace=@sm-office/desktop run test
+
+      - name: Build @sm-office/desktop frontend
+        run: npm --workspace=@sm-office/desktop run build
+
+      - name: Install Linux Tauri & xcap system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            pkg-config \
+            libclang-dev \
+            libxcb1-dev \
+            libxrandr-dev \
+            libdbus-1-dev \
+            libpipewire-0.3-dev \
+            libwayland-dev \
+            libegl-dev \
+            libgbm-dev \
+            curl \
+            wget \
+            file
+
+      - name: Setup Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 'apps/desktop/src-tauri -> target'
+          key: 'verify-x64'
+
+      - name: Run Rust core unit tests
+        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
+
+  prepare-release:
+    name: Prepare Draft GitHub Release
+    needs: verify
+    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    outputs:
+      release_id: ${{ steps.release.outputs.release_id }}
+    steps:
+      - name: Get or create draft GitHub release
+        id: release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = context.ref.replace('refs/tags/', '');
+            const { owner, repo } = context.repo;
+            const releases = await github.paginate(github.rest.repos.listReleases, {
+              owner,
+              repo,
+              per_page: 100,
+            });
+            let release = releases.find((r) => r.tag_name === tag);
+            if (!release) {
+              const created = await github.rest.repos.createRelease({
+                owner,
+                repo,
+                tag_name: tag,
+                name: `SM Office Desk ${tag}`,
+                draft: true,
+                prerelease: false,
+                generate_release_notes: true,
+              });
+              release = created.data;
+            }
+            core.setOutput('release_id', String(release.id));
+
+  build:
+    name: Build (${{ matrix.arch_label }})
+    needs: [verify, prepare-release]
+    if: >-
+      always() &&
+      needs.verify.result == 'success' &&
+      (needs.prepare-release.result == 'success' || needs.prepare-release.result == 'skipped')
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            os_family: windows
+            arch_label: win-x64
+            rust_target: x86_64-pc-windows-msvc
+            toolchain_targets: x86_64-pc-windows-msvc
+            bundles: nsis,msi
+          - platform: windows-11-arm
+            os_family: windows
+            arch_label: win-arm64
+            rust_target: aarch64-pc-windows-msvc
+            toolchain_targets: aarch64-pc-windows-msvc
+            bundles: nsis,msi
+          - platform: macos-14
+            os_family: macos
+            arch_label: macos-universal
+            rust_target: universal-apple-darwin
+            toolchain_targets: aarch64-apple-darwin,x86_64-apple-darwin
+            bundles: app,dmg
+          - platform: ubuntu-24.04
+            os_family: linux
+            arch_label: linux-x64
+            rust_target: x86_64-unknown-linux-gnu
+            toolchain_targets: x86_64-unknown-linux-gnu
+            bundles: deb,rpm,appimage
+          - platform: ubuntu-24.04-arm
+            os_family: linux
+            arch_label: linux-arm64
+            rust_target: aarch64-unknown-linux-gnu
+            toolchain_targets: aarch64-unknown-linux-gnu
+            bundles: deb,rpm,appimage
+    runs-on: ${{ matrix.platform }}
+    env:
+      HAS_APPLE_SIGNING: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_CERTIFICATE_PASSWORD != '' && secrets.APPLE_SIGNING_IDENTITY != '' }}
+      HAS_APPLE_NOTARIZE: ${{ secrets.APPLE_ID != '' && secrets.APPLE_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: matrix.os_family == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            rpm \
+            libssl-dev \
+            pkg-config \
+            libclang-dev \
+            libxcb1-dev \
+            libxrandr-dev \
+            libdbus-1-dev \
+            libpipewire-0.3-dev \
+            libwayland-dev \
+            libegl-dev \
+            libgbm-dev \
+            curl \
+            wget \
+            file
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Build @sm-office/shared
+        run: npm --workspace=@sm-office/shared run build
+
+      - name: Setup Rust toolchain (${{ matrix.toolchain_targets }})
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.toolchain_targets }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 'apps/desktop/src-tauri -> target'
+          key: ${{ matrix.arch_label }}
+
+      - name: Build & bundle Tauri app (signed & notarized macOS)
+        if: matrix.os_family == 'macos' && env.HAS_APPLE_SIGNING == 'true' && env.HAS_APPLE_NOTARIZE == 'true'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          projectPath: apps/desktop
+          includeUpdaterJson: false
+          args: --target ${{ matrix.rust_target }} --bundles ${{ matrix.bundles }}
+
+      - name: Build & bundle Tauri app (signed macOS without notarization)
+        if: matrix.os_family == 'macos' && env.HAS_APPLE_SIGNING == 'true' && env.HAS_APPLE_NOTARIZE != 'true'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        with:
+          projectPath: apps/desktop
+          includeUpdaterJson: false
+          args: --target ${{ matrix.rust_target }} --bundles ${{ matrix.bundles }}
+
+      - name: Build & bundle Tauri app
+        if: matrix.os_family != 'macos' || env.HAS_APPLE_SIGNING != 'true'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/desktop
+          includeUpdaterJson: false
+          args: --target ${{ matrix.rust_target }} --bundles ${{ matrix.bundles }}
+
+      - name: Stage installers with normalized release names
+        shell: bash
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const path = require("node:path");
+            const { execFileSync } = require("node:child_process");
+
+            const conf = JSON.parse(fs.readFileSync("apps/desktop/src-tauri/tauri.conf.json", "utf8"));
+            const version = conf.version;
+            const rustTarget = process.env.RUST_TARGET;
+            const osFamily = process.env.OS_FAMILY;
+            const releaseDir = path.join("apps/desktop/src-tauri/target", rustTarget, "release");
+            const bundleRoot = path.join(releaseDir, "bundle");
+            const outDir = "staged-artifacts";
+            fs.mkdirSync(outDir, { recursive: true });
+
+            const expected = [];
+            const copyExact = (srcPath, destName) => {
+              expected.push(destName);
+              if (!fs.existsSync(srcPath) || !fs.statSync(srcPath).isFile()) {
+                throw new Error(`Missing expected binary artifact: ${srcPath}`);
+              }
+              const dst = path.join(outDir, destName);
+              fs.copyFileSync(srcPath, dst);
+              console.log("Staged:", dst);
+            };
+
+            const copyMatching = (subDir, extSuffix, destName) => {
+              expected.push(destName);
+              const dir = path.join(bundleRoot, subDir);
+              if (!fs.existsSync(dir)) {
+                throw new Error(`Missing expected bundle directory: ${dir}`);
+              }
+              const matches = fs.readdirSync(dir).filter((entry) => {
+                if (!entry.endsWith(extSuffix)) return false;
+                const candidate = path.join(dir, entry);
+                return fs.statSync(candidate).isFile();
+              });
+              if (matches.length !== 1) {
+                throw new Error(`Expected exactly 1 *${extSuffix} in ${dir}, found ${matches.length} (${matches.join(", ")})`);
+              }
+              const src = path.join(dir, matches[0]);
+              const dst = path.join(outDir, destName);
+              fs.copyFileSync(src, dst);
+              console.log("Staged:", dst);
+            };
+
+            if (osFamily === "windows") {
+              const arch = rustTarget.startsWith("aarch64") ? "arm64" : "x64";
+              copyMatching("nsis", "-setup.exe", `SM-Office-Desk_${version}_windows_${arch}-setup.exe`);
+              copyExact(path.join(releaseDir, "sm-office-desktop.exe"), `SM-Office-Desk_${version}_windows_${arch}-portable.exe`);
+              copyMatching("msi", ".msi", `SM-Office-Desk_${version}_windows_${arch}.msi`);
+            } else if (osFamily === "macos") {
+              copyMatching("dmg", ".dmg", `SM-Office-Desk_${version}_darwin_universal.dmg`);
+              const macosDir = path.join(bundleRoot, "macos");
+              const appTarName = `SM-Office-Desk_${version}_darwin_universal.app.tar.gz`;
+              const tarMatches = fs.existsSync(macosDir)
+                ? fs.readdirSync(macosDir).filter((e) => e.endsWith(".app.tar.gz") && fs.statSync(path.join(macosDir, e)).isFile())
+                : [];
+              if (tarMatches.length === 1) {
+                copyMatching("macos", ".app.tar.gz", appTarName);
+              } else {
+                const appDirs = fs.existsSync(macosDir)
+                  ? fs.readdirSync(macosDir).filter((e) => e.endsWith(".app") && fs.statSync(path.join(macosDir, e)).isDirectory())
+                  : [];
+                if (appDirs.length !== 1) {
+                  throw new Error(`Expected 1 .app bundle in ${macosDir}, found ${appDirs.length} (${appDirs.join(", ")})`);
+                }
+                expected.push(appTarName);
+                execFileSync("tar", ["-C", macosDir, "-czf", path.join(outDir, appTarName), appDirs[0]], { stdio: "inherit" });
+                console.log("Staged (tar.gz):", path.join(outDir, appTarName));
+              }
+            } else if (osFamily === "linux") {
+              const debArch = rustTarget.startsWith("aarch64") ? "arm64" : "amd64";
+              const rpmArch = rustTarget.startsWith("aarch64") ? "aarch64" : "x86_64";
+              const appImgArch = rustTarget.startsWith("aarch64") ? "aarch64" : "amd64";
+              copyMatching("deb", ".deb", `SM-Office-Desk_${version}_linux_${debArch}.deb`);
+              copyMatching("rpm", ".rpm", `SM-Office-Desk_${version}_linux_${rpmArch}.rpm`);
+              copyMatching("appimage", ".AppImage", `SM-Office-Desk_${version}_linux_${appImgArch}.AppImage`);
+            } else {
+              throw new Error(`Unsupported OS_FAMILY: ${osFamily}`);
+            }
+
+            for (const name of expected) {
+              const stagedPath = path.join(outDir, name);
+              if (!fs.existsSync(stagedPath) || fs.statSync(stagedPath).size === 0) {
+                throw new Error(`Expected staged artifact missing or empty: ${stagedPath}`);
+              }
+            }
+          '
+        env:
+          RUST_TARGET: ${{ matrix.rust_target }}
+          OS_FAMILY: ${{ matrix.os_family }}
+
+      - name: Verify staged Linux .deb and .rpm packages
+        if: matrix.os_family == 'linux'
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          deb_files=(staged-artifacts/*.deb)
+          rpm_files=(staged-artifacts/*.rpm)
+          if [[ ${#deb_files[@]} -ne 1 || ${#rpm_files[@]} -ne 1 ]]; then
+            echo "Expected exactly 1 .deb and 1 .rpm in staged-artifacts/, found ${#deb_files[@]} .deb and ${#rpm_files[@]} .rpm"
+            ls -la staged-artifacts/
+            exit 1
+          fi
+          echo "=== dpkg-deb -I ${deb_files[0]} ==="
+          dpkg-deb -I "${deb_files[0]}"
+          echo "=== rpm -qpi ${rpm_files[0]} ==="
+          rpm -qpi "${rpm_files[0]}"
+          echo "=== rpm -qpR ${rpm_files[0]} ==="
+          rpm -qpR "${rpm_files[0]}"
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.arch_label }}
+          path: staged-artifacts/*
+          if-no-files-found: error
+
+  checksums:
+    name: Generate & Publish Checksums & Release Assets
+    needs: [build, prepare-release]
+    if: always() && needs.build.result == 'success' && (needs.prepare-release.result == 'success' || needs.prepare-release.result == 'skipped')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download all 64-bit platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Compute SHA256SUMS.txt
+        run: |
+          cd release-assets
+          rm -f SHA256SUMS.txt
+          LC_ALL=C sha256sum -- * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          {
+            echo "### Desktop 64-bit Artifact Checksums"
+            echo '```text'
+            cat SHA256SUMS.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload SHA256SUMS.txt workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-checksums
+          path: release-assets/SHA256SUMS.txt
+          if-no-files-found: error
+
+      - name: Upload release assets & SHA256SUMS.txt to draft GitHub release
+        if: startsWith(github.ref, 'refs/tags/desktop-v')
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('node:fs');
+            const path = require('node:path');
+            const { owner, repo } = context.repo;
+            const releaseId = Number('${{ needs.prepare-release.outputs.release_id }}');
+            if (!releaseId) {
+              throw new Error('Missing prepare-release.outputs.release_id');
+            }
+            const assetDir = 'release-assets';
+            const files = fs
+              .readdirSync(assetDir)
+              .filter((name) => fs.statSync(path.join(assetDir, name)).isFile())
+              .sort();
+            if (files.length === 0 || !files.includes('SHA256SUMS.txt')) {
+              throw new Error(`Unexpected release-assets contents: ${files.join(', ')}`);
+            }
+            const existingAssets = await github.paginate(
+              github.rest.repos.listReleaseAssets,
+              {
+                owner,
+                repo,
+                release_id: releaseId,
+                per_page: 100,
+              }
+            );
+            for (const fileName of files) {
+              const existing = existingAssets.find((a) => a.name === fileName);
+              if (existing) {
+                await github.rest.repos.deleteReleaseAsset({
+                  owner,
+                  repo,
+                  asset_id: existing.id,
+                });
+              }
+              const data = fs.readFileSync(path.join(assetDir, fileName));
+              const contentType =
+                fileName === 'SHA256SUMS.txt'
+                  ? 'text/plain; charset=utf-8'
+                  : 'application/octet-stream';
+              await github.rest.repos.uploadReleaseAsset({
+                owner,
+                repo,
+                release_id: releaseId,
+                name: fileName,
+                data,
+                headers: {
+                  'content-type': contentType,
+                  'content-length': data.length,
+                },
+              });
+              console.log(`Uploaded release asset: ${fileName} (${data.length} bytes)`);
+            }
