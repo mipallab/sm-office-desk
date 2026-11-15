@@ -59,6 +59,7 @@ export function SettingsPage() {
   const [r2SecretAccessKey, setR2SecretAccessKey] = useState("");
   const [savingStorage, setSavingStorage] = useState(false);
   const [storageError, setStorageError] = useState<string | null>(null);
+  const [syncingDb, setSyncingDb] = useState(false);
 
   const loadSettings = useCallback(async () => {
     setLoading(true);
@@ -183,7 +184,7 @@ export function SettingsPage() {
         title: "Storage backend updated",
         message:
           res.runtime.storage_driver === "r2"
-            ? `Connected live to Cloudflare R2 (${res.runtime.r2_bucket_name})`
+            ? `Connected live to Cloudflare R2 (${res.runtime.r2_bucket_name}) & synced database`
             : "Switched to Live Server Disk (/data/screenshots)",
       });
     } catch (err) {
@@ -194,6 +195,31 @@ export function SettingsPage() {
       );
     } finally {
       setSavingStorage(false);
+    }
+  };
+
+  const handleSyncDbNow = async () => {
+    if (syncingDb) return;
+    setSyncingDb(true);
+    try {
+      const res = await adminApi.syncDatabaseToR2();
+      setData((prev) => (prev ? { ...prev, runtime: res.runtime } : prev));
+      pushToast({
+        variant: "success",
+        title: "Database synced to Cloudflare R2",
+        message: "Full SQLite snapshot uploaded to _system/office-db-latest.sqlite",
+      });
+    } catch (err) {
+      pushToast({
+        variant: "error",
+        title: "Database sync failed",
+        message:
+          err instanceof ApiClientError
+            ? err.message
+            : "Could not sync database to Cloudflare R2",
+      });
+    } finally {
+      setSyncingDb(false);
     }
   };
 
@@ -617,13 +643,30 @@ export function SettingsPage() {
 
           <div className="flex flex-wrap items-center justify-between gap-2 py-3">
             <dt className="font-medium text-slate-600">Database Engine</dt>
-            <dd className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-800 tabular-nums sm:text-sm">
-              <Database className="h-4 w-4 text-slate-500" strokeWidth={1.75} aria-hidden="true" />
-              SQLite WAL Mode ·{" "}
-              {quotas ? `${quotas.active_employees}/${quotas.max_active_employees}` : `—/${MAX_ACTIVE_EMPLOYEES}`}{" "}
-              Emp ·{" "}
-              {quotas ? `${quotas.active_admins}/${quotas.max_active_admins}` : `—/${MAX_ACTIVE_ADMINS}`}{" "}
-              Adm
+            <dd className="flex flex-wrap items-center gap-2 text-xs font-medium text-slate-800 tabular-nums sm:text-sm">
+              <span className="inline-flex items-center gap-1.5">
+                <Database className="h-4 w-4 text-slate-500" strokeWidth={1.75} aria-hidden="true" />
+                SQLite WAL Mode ·{" "}
+                {quotas ? `${quotas.active_employees}/${quotas.max_active_employees}` : `—/${MAX_ACTIVE_EMPLOYEES}`}{" "}
+                Emp ·{" "}
+                {quotas ? `${quotas.active_admins}/${quotas.max_active_admins}` : `—/${MAX_ACTIVE_ADMINS}`}{" "}
+                Adm
+              </span>
+              {data?.runtime.db_sync_enabled ? (
+                <button
+                  type="button"
+                  disabled={syncingDb}
+                  onClick={() => void handleSyncDbNow()}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+                >
+                  {syncingDb ? (
+                    <Loader2 className="h-3 w-3 animate-spin" strokeWidth={1.75} aria-hidden="true" />
+                  ) : (
+                    <Check className="h-3 w-3" strokeWidth={1.75} aria-hidden="true" />
+                  )}
+                  R2 Auto-Backup Active (Sync Now)
+                </button>
+              ) : null}
             </dd>
           </div>
         </dl>

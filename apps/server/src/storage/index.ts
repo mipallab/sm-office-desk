@@ -10,6 +10,12 @@ import type {
 export type { ListedStorageObject, PrivateReadResult, StorageDriver } from "./types.js";
 export { LocalStorageDriver } from "./local.js";
 export { R2StorageDriver } from "./r2.js";
+export {
+  R2DatabaseSyncManager,
+  restoreDatabaseFromR2IfNeeded,
+  R2_DB_SNAPSHOT_KEY,
+  type R2Credentials,
+} from "./db-sync.js";
 
 export class DynamicStorageDriver implements StorageDriver {
   private current: StorageDriver;

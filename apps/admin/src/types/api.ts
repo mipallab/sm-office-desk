@@ -160,6 +160,8 @@ export interface AdminRuntimeInfo {
   r2_bucket_name?: string;
   r2_access_key_id?: string;
   r2_has_secret?: boolean;
+  db_sync_enabled?: boolean;
+  db_last_synced_at?: string | null;
   max_active_employees: number;
   max_active_admins: number;
 }

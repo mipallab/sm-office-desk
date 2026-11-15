@@ -19,6 +19,7 @@ import { createAuthenticateHook, requireAdmin } from "../plugins/auth.js";
 import {
   DynamicStorageDriver,
   LocalStorageDriver,
+  R2DatabaseSyncManager,
   R2StorageDriver,
   type StorageDriver,
 } from "../storage/index.js";
@@ -38,6 +39,7 @@ export interface AdminSettingsRoutesDeps {
   sqlite: Database.Database;
   db: AppDb;
   storageDriver: StorageDriver;
+  dbSync?: R2DatabaseSyncManager;
 }
 
 export function registerAdminSettingsRoutes(
@@ -67,12 +69,20 @@ export function registerAdminSettingsRoutes(
     const r2SecretKey =
       saved?.r2_secret_access_key || deps.config.r2SecretAccessKey || "";
 
+    const syncStatus = deps.dbSync?.getStatus() ?? {
+      enabled: false,
+      last_synced_at: null,
+      last_size_bytes: 0,
+    };
+
     return {
       storage_driver: deps.storageDriver.driverName,
       r2_account_id: r2AccountId,
       r2_bucket_name: r2BucketName,
       r2_access_key_id: r2AccessKeyId,
       r2_has_secret: Boolean(r2SecretKey),
+      db_sync_enabled: syncStatus.enabled,
+      db_last_synced_at: syncStatus.last_synced_at,
       max_active_employees: MAX_ACTIVE_EMPLOYEES,
       max_active_admins: MAX_ACTIVE_ADMINS,
     };
@@ -199,6 +209,35 @@ export function registerAdminSettingsRoutes(
         },
         createdAt: nowIso,
       });
+
+      if (input.storage_driver === "r2" && deps.dbSync) {
+        await deps.dbSync.backupNow().catch(() => {});
+      }
+
+      return reply.code(200).send({
+        runtime: getRuntimeInfo(),
+      });
+    }
+  );
+
+  app.post(
+    "/api/admin/settings/storage/sync-db",
+    { preHandler: [authenticate, requireAdmin] },
+    async (_request, reply) => {
+      if (!deps.dbSync || !deps.dbSync.getActiveR2Credentials()) {
+        throw new AppError(
+          400,
+          "VALIDATION_ERROR",
+          "Configure Cloudflare R2 credentials first before syncing the database."
+        );
+      }
+
+      try {
+        await deps.dbSync.backupNow();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Database cloud sync failed";
+        throw new AppError(500, "INTERNAL_ERROR", msg);
+      }
 
       return reply.code(200).send({
         runtime: getRuntimeInfo(),

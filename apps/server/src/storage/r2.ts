@@ -170,6 +170,7 @@ export class R2StorageDriver implements StorageDriver {
 
       for (const item of res.Contents ?? []) {
         if (!item.Key || !item.LastModified) continue;
+        if (item.Key.startsWith("_system/")) continue;
         if (item.LastModified.getTime() < cutoffDate.getTime()) {
           results.push({
             key: item.Key,

@@ -23,7 +23,9 @@ import { registerTrackerRoutes } from "./routes/tracker.js";
 import {
   createStorageDriver,
   LocalStorageDriver,
+  R2DatabaseSyncManager,
   R2StorageDriver,
+  restoreDatabaseFromR2IfNeeded,
   type StorageDriver,
 } from "./storage/index.js";
 import { registerErrorHandler } from "./utils/errors.js";
@@ -60,6 +62,25 @@ export async function buildApp(
       { allowIncompleteR2: Boolean(options.storageDriver) }
     );
 
+  if (
+    !options.storageDriver &&
+    config.r2AccountId &&
+    config.r2BucketName &&
+    config.r2AccessKeyId &&
+    config.r2SecretAccessKey
+  ) {
+    try {
+      await restoreDatabaseFromR2IfNeeded(config.sqlitePath, {
+        accountId: config.r2AccountId,
+        bucketName: config.r2BucketName,
+        accessKeyId: config.r2AccessKeyId,
+        secretAccessKey: config.r2SecretAccessKey,
+      });
+    } catch {
+      // Proceed with clean database initialization if R2 snapshot restore fails
+    }
+  }
+
   const { sqlite, db } = initDatabase({
     sqlitePath: config.sqlitePath,
     companyName: config.companyName,
@@ -67,6 +88,8 @@ export async function buildApp(
     currencyCode: config.currencyCode,
     retentionDays: config.retentionDays,
   });
+
+  const dbSync = new R2DatabaseSyncManager(sqlite, config);
 
   let storageDriver: StorageDriver;
   if (options.storageDriver) {
@@ -195,8 +218,31 @@ export async function buildApp(
   });
   registerAdminLocationsRoutes(app, { config, sqlite, db, wsHub });
   registerAdminSalaryRoutes(app, { config, sqlite, db });
-  registerAdminSettingsRoutes(app, { config, sqlite, db, storageDriver });
+  registerAdminSettingsRoutes(app, {
+    config,
+    sqlite,
+    db,
+    storageDriver,
+    dbSync,
+  });
   registerAdminAuditRoutes(app, { config, db });
+
+  if (!options.storageDriver) {
+    app.addHook("onResponse", (request, reply, done) => {
+      if (
+        request.url.startsWith("/api/") &&
+        (request.method === "POST" ||
+          request.method === "PUT" ||
+          request.method === "PATCH" ||
+          request.method === "DELETE") &&
+        reply.statusCode >= 200 &&
+        reply.statusCode < 300
+      ) {
+        dbSync.scheduleDebouncedBackup(2000);
+      }
+      done();
+    });
+  }
 
   // Serve static assets for Admin Web SPA if apps/admin/dist exists
   const currentFileDir = path.dirname(fileURLToPath(import.meta.url));
@@ -240,6 +286,10 @@ export async function buildApp(
       });
 
   app.addHook("onClose", async () => {
+    dbSync.stop();
+    if (!options.storageDriver) {
+      await dbSync.backupNow().catch(() => {});
+    }
     cronHandle?.stop();
     wsHub.closeAll();
     sqlite.close();

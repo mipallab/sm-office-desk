@@ -518,4 +518,14 @@ export const adminApi = {
       }
     );
   },
+
+  syncDatabaseToR2(): Promise<{ runtime: AdminSettingsResponse["runtime"] }> {
+    return apiFetch<{ runtime: AdminSettingsResponse["runtime"] }>(
+      "/api/admin/settings/storage/sync-db",
+      {
+        method: "POST",
+        body: {},
+      }
+    );
+  },
 };
