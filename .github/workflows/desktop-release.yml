@@ -381,7 +381,7 @@ jobs:
   checksums:
     name: Generate & Publish Checksums & Release Assets
     needs: [build, prepare-release]
-    if: always() && needs.build.result == 'success' && (needs.prepare-release.result == 'success' || needs.prepare-release.result == 'skipped')
+    if: always() && (needs.build.result == 'success' || needs.build.result == 'cancelled') && (needs.prepare-release.result == 'success' || needs.prepare-release.result == 'skipped')
     runs-on: ubuntu-22.04
     permissions:
       contents: write
