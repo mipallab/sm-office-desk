@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import {
   Banknote,
   Clock,
+  Download,
   Images,
   LayoutDashboard,
   LogOut,
@@ -278,6 +279,14 @@ export function AppShell() {
           </div>
 
           <div className="flex items-center gap-2.5">
+            <Link
+              to="/download"
+              className="hidden items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-2 sm:inline-flex"
+              title="Open employee desktop software download page"
+            >
+              <Download className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
+              <span>Desktop App</span>
+            </Link>
             <span className="hidden text-sm font-medium text-slate-700 md:inline">
               {user?.name ?? "Admin"}{" "}
               <span className="text-xs font-normal text-slate-500">(Admin)</span>

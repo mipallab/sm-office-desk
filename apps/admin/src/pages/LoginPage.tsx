@@ -1,7 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Navigate } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import {
   AlertTriangle,
+  ArrowLeft,
+  Download,
   Eye,
   EyeOff,
   Loader2,
@@ -96,6 +98,15 @@ export function LoginPage() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-4 py-10">
+      <div className="mb-4 w-full max-w-md">
+        <Link
+          to="/"
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 transition-colors hover:text-indigo-600"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
+          Back to Home &amp; Desktop Downloads
+        </Link>
+      </div>
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xs sm:p-8">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white">
@@ -249,6 +260,17 @@ export function LoginPage() {
               npm run reset:password
             </code>
           </p>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50/70 p-3.5 text-xs text-slate-700">
+          <p className="font-semibold text-slate-900">Are you an employee?</p>
+          <Link
+            to="/download"
+            className="mt-1 inline-flex items-center gap-1.5 font-medium text-indigo-700 hover:text-indigo-800 hover:underline"
+          >
+            <Download className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
+            Download the Desktop Tracker App (Windows &amp; Linux) &rarr;
+          </Link>
         </div>
       </div>
     </div>

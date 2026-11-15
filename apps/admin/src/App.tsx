@@ -1,10 +1,11 @@
-import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/AppShell";
 import { ToastContainer } from "./components/Toast";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { RealtimeProvider } from "./context/RealtimeContext";
 import { ToastProvider } from "./context/ToastContext";
 import { EmployeesPage } from "./pages/EmployeesPage";
+import { LandingPage } from "./pages/LandingPage";
 import { LoginPage } from "./pages/LoginPage";
 import { MonitorPage } from "./pages/MonitorPage";
 import { SalaryPage } from "./pages/SalaryPage";
@@ -35,14 +36,6 @@ function ProtectedAdminArea() {
   );
 }
 
-function DefaultRedirect() {
-  const { isAuthenticated, isBooting } = useAuth();
-  if (isBooting) {
-    return <Outlet />;
-  }
-  return <Navigate to={isAuthenticated ? "/monitor" : "/login"} replace />;
-}
-
 export function App() {
   return (
     <BrowserRouter>
@@ -50,6 +43,8 @@ export function App() {
         <AuthProvider>
           <ToastContainer />
           <Routes>
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/download" element={<LandingPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route element={<ProtectedAdminArea />}>
               <Route path="/monitor" element={<MonitorPage />} />
@@ -58,8 +53,7 @@ export function App() {
               <Route path="/salary" element={<SalaryPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
-            <Route path="/" element={<DefaultRedirect />} />
-            <Route path="*" element={<DefaultRedirect />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </AuthProvider>
       </ToastProvider>
