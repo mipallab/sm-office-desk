@@ -51,6 +51,15 @@ export function SettingsPage() {
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [copiedCli, setCopiedCli] = useState(false);
 
+  const [editingStorage, setEditingStorage] = useState(false);
+  const [storageDriverInput, setStorageDriverInput] = useState<"local" | "r2">("local");
+  const [r2AccountId, setR2AccountId] = useState("");
+  const [r2BucketName, setR2BucketName] = useState("sm-office-desk-screenshots");
+  const [r2AccessKeyId, setR2AccessKeyId] = useState("");
+  const [r2SecretAccessKey, setR2SecretAccessKey] = useState("");
+  const [savingStorage, setSavingStorage] = useState(false);
+  const [storageError, setStorageError] = useState<string | null>(null);
+
   const loadSettings = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
@@ -58,6 +67,10 @@ export function SettingsPage() {
       const [res] = await Promise.all([adminApi.getSettings(), refreshQuotas()]);
       setData(res);
       setCompanyName(res.settings.company_name);
+      setStorageDriverInput(res.runtime.storage_driver);
+      setR2AccountId(res.runtime.r2_account_id ?? "");
+      setR2BucketName(res.runtime.r2_bucket_name || "sm-office-desk-screenshots");
+      setR2AccessKeyId(res.runtime.r2_access_key_id ?? "");
 
       const isCommonTz = COMMON_TIMEZONES.some(
         (t) => t.value === res.settings.company_timezone
@@ -148,6 +161,41 @@ export function SettingsPage() {
   };
 
   const resetCliCommand = `npm run reset:password -- --email=${user?.email ?? "admin@company.com"}`;
+
+  const handleSaveStorage = async (e: FormEvent) => {
+    e.preventDefault();
+    if (savingStorage) return;
+    setStorageError(null);
+    setSavingStorage(true);
+    try {
+      const res = await adminApi.updateStorageConfig({
+        storage_driver: storageDriverInput,
+        r2_account_id: r2AccountId.trim(),
+        r2_bucket_name: r2BucketName.trim(),
+        r2_access_key_id: r2AccessKeyId.trim(),
+        r2_secret_access_key: r2SecretAccessKey.trim() || undefined,
+      });
+      setData((prev) => (prev ? { ...prev, runtime: res.runtime } : prev));
+      setR2SecretAccessKey("");
+      setEditingStorage(false);
+      pushToast({
+        variant: "success",
+        title: "Storage backend updated",
+        message:
+          res.runtime.storage_driver === "r2"
+            ? `Connected live to Cloudflare R2 (${res.runtime.r2_bucket_name})`
+            : "Switched to Live Server Disk (/data/screenshots)",
+      });
+    } catch (err) {
+      setStorageError(
+        err instanceof ApiClientError
+          ? err.message
+          : "Could not update storage backend"
+      );
+    } finally {
+      setSavingStorage(false);
+    }
+  };
 
   const handleCopyCli = async () => {
     try {
@@ -360,15 +408,22 @@ export function SettingsPage() {
         </form>
       </section>
 
-      {/* Retention & Infrastructure Policy (Read-Only) */}
+      {/* Retention & Infrastructure Policy */}
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs sm:p-6">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-base font-semibold text-slate-900">
             Retention & Infrastructure Policy
           </h2>
-          <span className="rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-            Read-Only
-          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setStorageError(null);
+              setEditingStorage((prev) => !prev);
+            }}
+            className="rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-800 hover:bg-indigo-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600"
+          >
+            {editingStorage ? "Close Storage Config" : "Configure Live Storage"}
+          </button>
         </div>
 
         <dl className="mt-4 divide-y divide-slate-200 text-sm">
@@ -391,20 +446,174 @@ export function SettingsPage() {
 
           <div className="flex flex-wrap items-center justify-between gap-2 py-3">
             <dt className="font-medium text-slate-600">Storage Backend</dt>
-            <dd>
+            <dd className="flex flex-wrap items-center gap-2">
               {data?.runtime.storage_driver === "r2" ? (
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">
                   <HardDrive className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
-                  Cloudflare R2 (Private Bucket)
+                  Cloudflare R2 ({data.runtime.r2_bucket_name || "Private Bucket"})
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-800">
                   <HardDrive className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
-                  Local Disk Fallback
+                  Live Server Disk (/data/screenshots)
                 </span>
               )}
             </dd>
           </div>
+
+          {editingStorage ? (
+            <div className="py-4">
+              <form
+                onSubmit={(e) => void handleSaveStorage(e)}
+                className="space-y-4 rounded-xl border border-indigo-200 bg-slate-50/80 p-4"
+              >
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    Configure Live Screenshot Storage Backend
+                  </h3>
+                  <p className="mt-0.5 text-xs text-slate-600">
+                    Switch between Live Server Disk and Cloudflare R2 (S3-compatible 10 GB Free Cloud Bucket) without restarting the server.
+                  </p>
+                </div>
+
+                {storageError ? (
+                  <div
+                    role="alert"
+                    className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-800"
+                  >
+                    {storageError}
+                  </div>
+                ) : null}
+
+                <div>
+                  <label
+                    htmlFor="storage-driver-select"
+                    className="block text-xs font-semibold text-slate-700"
+                  >
+                    Storage Mode
+                  </label>
+                  <select
+                    id="storage-driver-select"
+                    value={storageDriverInput}
+                    onChange={(e) =>
+                      setStorageDriverInput(e.target.value as "local" | "r2")
+                    }
+                    className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600"
+                  >
+                    <option value="local">
+                      Live Server Disk (/data/screenshots on Server)
+                    </option>
+                    <option value="r2">
+                      Cloudflare R2 Cloud Storage (Private S3 Bucket)
+                    </option>
+                  </select>
+                </div>
+
+                {storageDriverInput === "r2" ? (
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div>
+                      <label
+                        htmlFor="r2-account-id"
+                        className="block text-xs font-medium text-slate-700"
+                      >
+                        Cloudflare Account ID *
+                      </label>
+                      <input
+                        id="r2-account-id"
+                        type="text"
+                        required
+                        value={r2AccountId}
+                        onChange={(e) => setR2AccountId(e.target.value)}
+                        placeholder="e.g. 8f9a2b3c4d5e6f..."
+                        className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-mono text-xs text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600"
+                      />
+                    </div>
+                    <div>
+                      <label
+                        htmlFor="r2-bucket-name"
+                        className="block text-xs font-medium text-slate-700"
+                      >
+                        R2 Bucket Name *
+                      </label>
+                      <input
+                        id="r2-bucket-name"
+                        type="text"
+                        required
+                        value={r2BucketName}
+                        onChange={(e) => setR2BucketName(e.target.value)}
+                        placeholder="sm-office-desk-screenshots"
+                        className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-mono text-xs text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600"
+                      />
+                    </div>
+                    <div>
+                      <label
+                        htmlFor="r2-access-key"
+                        className="block text-xs font-medium text-slate-700"
+                      >
+                        R2 S3 Access Key ID *
+                      </label>
+                      <input
+                        id="r2-access-key"
+                        type="text"
+                        required
+                        value={r2AccessKeyId}
+                        onChange={(e) => setR2AccessKeyId(e.target.value)}
+                        placeholder="S3 API Access Key ID"
+                        className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-mono text-xs text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600"
+                      />
+                    </div>
+                    <div>
+                      <label
+                        htmlFor="r2-secret-key"
+                        className="block text-xs font-medium text-slate-700"
+                      >
+                        R2 S3 Secret Access Key{" "}
+                        {data?.runtime.r2_has_secret ? "(Saved)" : "*"}
+                      </label>
+                      <input
+                        id="r2-secret-key"
+                        type="password"
+                        required={!data?.runtime.r2_has_secret}
+                        value={r2SecretAccessKey}
+                        onChange={(e) => setR2SecretAccessKey(e.target.value)}
+                        placeholder={
+                          data?.runtime.r2_has_secret
+                            ? "Leave blank to keep existing secret"
+                            : "S3 API Secret Access Key"
+                        }
+                        className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-mono text-xs text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600"
+                      />
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="flex justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    disabled={savingStorage}
+                    onClick={() => setEditingStorage(false)}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingStorage}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    {savingStorage ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.75} aria-hidden="true" />
+                    ) : (
+                      <Save className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
+                    )}
+                    {storageDriverInput === "r2"
+                      ? "Test & Activate R2 Cloud"
+                      : "Save Server Disk Mode"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          ) : null}
 
           <div className="flex flex-wrap items-center justify-between gap-2 py-3">
             <dt className="font-medium text-slate-600">Database Engine</dt>

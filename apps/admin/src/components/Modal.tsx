@@ -34,6 +34,12 @@ export function Modal({
 }: ModalProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  const initialFocusTargetRef = useRef(initialFocusRef);
+
+  onCloseRef.current = onClose;
+  initialFocusTargetRef.current = initialFocusRef;
+
   const canBackdropClose =
     closeOnBackdropClick ?? role !== "alertdialog";
 
@@ -43,11 +49,18 @@ export function Modal({
     previousFocusRef.current = document.activeElement as HTMLElement | null;
 
     const focusInitial = () => {
-      if (initialFocusRef?.current) {
-        initialFocusRef.current.focus();
+      const panel = panelRef.current;
+      if (
+        panel &&
+        panel.contains(document.activeElement) &&
+        document.activeElement !== panel
+      ) {
         return;
       }
-      const panel = panelRef.current;
+      if (initialFocusTargetRef.current?.current) {
+        initialFocusTargetRef.current.current.focus();
+        return;
+      }
       if (!panel) return;
       const focusables = panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
       if (focusables.length > 0 && focusables[0]) {
@@ -62,7 +75,7 @@ export function Modal({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -108,7 +121,7 @@ export function Modal({
         prevEl.focus();
       }
     };
-  }, [open, onClose, initialFocusRef]);
+  }, [open]);
 
   if (!open) return null;
 

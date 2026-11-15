@@ -60,6 +60,17 @@ export function initDatabase(options: InitDatabaseOptions): DatabaseContext {
 
   const migrationSql = fs.readFileSync(resolveMigrationPath(), "utf8");
   sqlite.exec(migrationSql);
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS storage_config (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      storage_driver TEXT NOT NULL DEFAULT 'local' CHECK (storage_driver IN ('local', 'r2')),
+      r2_account_id TEXT NOT NULL DEFAULT '',
+      r2_bucket_name TEXT NOT NULL DEFAULT '',
+      r2_access_key_id TEXT NOT NULL DEFAULT '',
+      r2_secret_access_key TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL
+    );
+  `);
 
   const db = drizzle(sqlite, { schema });
 

@@ -502,4 +502,20 @@ export const adminApi = {
       }
     );
   },
+
+  updateStorageConfig(input: {
+    storage_driver: "local" | "r2";
+    r2_account_id?: string;
+    r2_bucket_name?: string;
+    r2_access_key_id?: string;
+    r2_secret_access_key?: string;
+  }): Promise<{ runtime: AdminSettingsResponse["runtime"] }> {
+    return apiFetch<{ runtime: AdminSettingsResponse["runtime"] }>(
+      "/api/admin/settings/storage",
+      {
+        method: "PUT",
+        body: input,
+      }
+    );
+  },
 };

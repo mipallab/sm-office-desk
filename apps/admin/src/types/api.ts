@@ -154,13 +154,19 @@ export interface SalaryReportPreviewResponse {
   existing_report_id: number | null;
 }
 
+export interface AdminRuntimeInfo {
+  storage_driver: StorageDriverType;
+  r2_account_id?: string;
+  r2_bucket_name?: string;
+  r2_access_key_id?: string;
+  r2_has_secret?: boolean;
+  max_active_employees: number;
+  max_active_admins: number;
+}
+
 export interface AdminSettingsResponse {
   settings: AppSettings;
-  runtime: {
-    storage_driver: StorageDriverType;
-    max_active_employees: number;
-    max_active_admins: number;
-  };
+  runtime: AdminRuntimeInfo;
 }
 
 export type WsConnectionStatus = "connected" | "reconnecting" | "disconnected";

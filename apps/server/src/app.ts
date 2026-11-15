@@ -20,7 +20,12 @@ import { registerAdminSettingsRoutes } from "./routes/admin-settings.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerTrackerRoutes } from "./routes/tracker.js";
-import { createStorageDriver, type StorageDriver } from "./storage/index.js";
+import {
+  createStorageDriver,
+  LocalStorageDriver,
+  R2StorageDriver,
+  type StorageDriver,
+} from "./storage/index.js";
 import { registerErrorHandler } from "./utils/errors.js";
 import { LoginRateLimiter } from "./utils/rate-limit.js";
 import { WsHub } from "./ws/hub.js";
@@ -63,7 +68,48 @@ export async function buildApp(
     retentionDays: config.retentionDays,
   });
 
-  const storageDriver = options.storageDriver ?? createStorageDriver(config);
+  let storageDriver: StorageDriver;
+  if (options.storageDriver) {
+    storageDriver = options.storageDriver;
+  } else {
+    const dynamicDriver = createStorageDriver(config);
+    const savedStorage = sqlite
+      .prepare(
+        "SELECT storage_driver, r2_account_id, r2_bucket_name, r2_access_key_id, r2_secret_access_key FROM storage_config WHERE id = 1"
+      )
+      .get() as
+      | {
+          storage_driver: "local" | "r2";
+          r2_account_id: string;
+          r2_bucket_name: string;
+          r2_access_key_id: string;
+          r2_secret_access_key: string;
+        }
+      | undefined;
+
+    if (savedStorage) {
+      if (
+        savedStorage.storage_driver === "r2" &&
+        savedStorage.r2_account_id &&
+        savedStorage.r2_bucket_name &&
+        savedStorage.r2_access_key_id &&
+        savedStorage.r2_secret_access_key
+      ) {
+        dynamicDriver.setDriver(
+          new R2StorageDriver({
+            accountId: savedStorage.r2_account_id,
+            bucketName: savedStorage.r2_bucket_name,
+            accessKeyId: savedStorage.r2_access_key_id,
+            secretAccessKey: savedStorage.r2_secret_access_key,
+            defaultPresignedTtlSeconds: config.r2PresignedUrlTtlSeconds,
+          })
+        );
+      } else if (savedStorage.storage_driver === "local") {
+        dynamicDriver.setDriver(new LocalStorageDriver(config.localStoragePath));
+      }
+    }
+    storageDriver = dynamicDriver;
+  }
 
   const app = Fastify({
     logger:
