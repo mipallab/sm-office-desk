@@ -469,3 +469,11 @@ jobs:
               });
               console.log(`Uploaded release asset: ${fileName} (${data.length} bytes)`);
             }
+
+            await github.rest.repos.updateRelease({
+              owner,
+              repo,
+              release_id: releaseId,
+              draft: false,
+            });
+            console.log(`Successfully published release #${releaseId} for public downloads.`);
