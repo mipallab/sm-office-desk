@@ -10,7 +10,9 @@ interface SecureScreenshotImageProps {
   alt: string;
   aspectClassName?: string;
   imgClassName?: string;
+  containerBgClassName?: string;
   loading?: "lazy" | "eager";
+  imgDraggable?: boolean;
 }
 
 function isNearExpiry(expiresAt?: string | null): boolean {
@@ -28,7 +30,9 @@ export function SecureScreenshotImage({
   alt,
   aspectClassName = "aspect-video",
   imgClassName = "h-full w-full object-cover",
+  containerBgClassName = "bg-slate-200",
   loading = "lazy",
+  imgDraggable = true,
 }: SecureScreenshotImageProps) {
   const [resolvedSrc, setResolvedSrc] = useState<string | null>(() => {
     if (presignedUrl && !isNearExpiry(presignedUrlExpiresAt)) {
@@ -147,7 +151,7 @@ export function SecureScreenshotImage({
 
   return (
     <div
-      className={`relative w-full overflow-hidden bg-slate-200 ${aspectClassName}`}
+      className={`relative w-full overflow-hidden ${containerBgClassName} ${aspectClassName}`}
     >
       {isLoading && !hasError ? (
         <div
@@ -178,6 +182,7 @@ export function SecureScreenshotImage({
           alt={alt}
           loading={loading}
           decoding="async"
+          draggable={imgDraggable}
           onLoad={() => setIsLoading(false)}
           onError={() => void handleImgError()}
           className={`${imgClassName} transition-opacity duration-150 ${
