@@ -95,6 +95,8 @@ pub fn classify_capture_error(err_msg: &str) -> Option<DisplayState> {
                 || lower.contains("pipewire")
                 || lower.contains("screenshot")
                 || lower.contains("zbus")
+                || lower.contains("wayland protocol")
+                || lower.contains("cannot find required")
                 || lower.contains("org.freedesktop"))
         {
             return Some(DisplayState::PermissionDenied {

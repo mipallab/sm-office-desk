@@ -33,23 +33,136 @@ pub enum CaptureOutcome {
     PermissionDenied { os: &'static str, detail: String },
 }
 
-/// Captures all active displays via `xcap`, stitches proportionally, scales within
-/// `1440px` (single) or `1600px` (multi-monitor), and encodes WebP <= 512 KB.
+#[cfg(target_os = "linux")]
+pub fn try_linux_external_capture() -> Result<RawMonitorFrame, String> {
+    use std::process::Command;
+
+    // 1. Stdout-based capture tools (no temp file needed)
+    let stdout_commands: [(&str, &[&str]); 3] = [
+        ("flameshot", &["full", "-r"]),
+        ("flatpak", &["run", "org.flameshot.Flameshot", "full", "-r"]),
+        ("grim", &["-"]),
+    ];
+
+    for (cmd, args) in stdout_commands {
+        if let Ok(output) = Command::new(cmd).args(args).output() {
+            if output.status.success() && !output.stdout.is_empty() {
+                if let Ok(img) = image::load_from_memory(&output.stdout) {
+                    let rgba_img = img.to_rgba8();
+                    let width = rgba_img.width();
+                    let height = rgba_img.height();
+                    if width > 0 && height > 0 {
+                        return Ok(RawMonitorFrame {
+                            x: 0,
+                            y: 0,
+                            width,
+                            height,
+                            rgba: rgba_img.into_raw(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. GNOME-Screenshot CLI fallback
+    let tmp_path = format!("/tmp/sm_desk_capture_{}.png", std::process::id());
+    let _ = std::fs::remove_file(&tmp_path);
+    if let Ok(status) = Command::new("gnome-screenshot").args(["-f", &tmp_path]).status() {
+        if status.success() {
+            if let Ok(bytes) = std::fs::read(&tmp_path) {
+                let _ = std::fs::remove_file(&tmp_path);
+                if let Ok(img) = image::load_from_memory(&bytes) {
+                    let rgba_img = img.to_rgba8();
+                    let width = rgba_img.width();
+                    let height = rgba_img.height();
+                    if width > 0 && height > 0 {
+                        return Ok(RawMonitorFrame {
+                            x: 0,
+                            y: 0,
+                            width,
+                            height,
+                            rgba: rgba_img.into_raw(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    let _ = std::fs::remove_file(&tmp_path);
+
+    // 3. Spectacle (KDE) fallback
+    let _ = std::fs::remove_file(&tmp_path);
+    if let Ok(status) = Command::new("spectacle").args(["-b", "-n", "-o", &tmp_path]).status() {
+        if status.success() {
+            if let Ok(bytes) = std::fs::read(&tmp_path) {
+                let _ = std::fs::remove_file(&tmp_path);
+                if let Ok(img) = image::load_from_memory(&bytes) {
+                    let rgba_img = img.to_rgba8();
+                    let width = rgba_img.width();
+                    let height = rgba_img.height();
+                    if width > 0 && height > 0 {
+                        return Ok(RawMonitorFrame {
+                            x: 0,
+                            y: 0,
+                            width,
+                            height,
+                            rgba: rgba_img.into_raw(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    let _ = std::fs::remove_file(&tmp_path);
+
+    Err("No Linux screenshot tool (flameshot/grim/gnome-screenshot/spectacle) succeeded".to_string())
+}
+
+/// Captures all active displays via `xcap` (with automatic Wayland tool fallback on Linux),
+/// stitches proportionally, scales within `1440px` (single) or `1600px` (multi-monitor), and encodes WebP <= 512 KB.
 pub fn capture_all_monitors_sync() -> Result<CaptureOutcome, String> {
     match check_display_state() {
         DisplayState::ScreenLocked => {
             return Ok(CaptureOutcome::ScreenLocked { monitor_count: 0 });
         }
         DisplayState::PermissionDenied { os, detail } => {
+            #[cfg(target_os = "linux")]
+            {
+                if let Ok(frame) = try_linux_external_capture() {
+                    let (canvas, count) = stitch_and_scale_monitors(&[frame])?;
+                    let encoded = encode_webp_under_limit(&canvas, count)?;
+                    return Ok(CaptureOutcome::Captured(encoded));
+                }
+            }
             return Ok(CaptureOutcome::PermissionDenied { os, detail });
         }
         DisplayState::Unlocked => {}
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if crate::lock::is_wayland_session() {
+            if let Ok(frame) = try_linux_external_capture() {
+                let (canvas, count) = stitch_and_scale_monitors(&[frame])?;
+                let encoded = encode_webp_under_limit(&canvas, count)?;
+                return Ok(CaptureOutcome::Captured(encoded));
+            }
+        }
     }
 
     let monitors = match Monitor::all() {
         Ok(m) => m,
         Err(e) => {
             let msg = e.to_string();
+            #[cfg(target_os = "linux")]
+            {
+                if let Ok(frame) = try_linux_external_capture() {
+                    let (canvas, count) = stitch_and_scale_monitors(&[frame])?;
+                    let encoded = encode_webp_under_limit(&canvas, count)?;
+                    return Ok(CaptureOutcome::Captured(encoded));
+                }
+            }
             return match classify_capture_error(&msg) {
                 Some(DisplayState::ScreenLocked) => {
                     Ok(CaptureOutcome::ScreenLocked { monitor_count: 0 })
@@ -63,6 +176,14 @@ pub fn capture_all_monitors_sync() -> Result<CaptureOutcome, String> {
     };
 
     if monitors.is_empty() {
+        #[cfg(target_os = "linux")]
+        {
+            if let Ok(frame) = try_linux_external_capture() {
+                let (canvas, count) = stitch_and_scale_monitors(&[frame])?;
+                let encoded = encode_webp_under_limit(&canvas, count)?;
+                return Ok(CaptureOutcome::Captured(encoded));
+            }
+        }
         return Ok(CaptureOutcome::ScreenLocked { monitor_count: 0 });
     }
 
@@ -76,6 +197,14 @@ pub fn capture_all_monitors_sync() -> Result<CaptureOutcome, String> {
             Ok(img) => img,
             Err(e) => {
                 let msg = e.to_string();
+                #[cfg(target_os = "linux")]
+                {
+                    if let Ok(frame) = try_linux_external_capture() {
+                        let (canvas, count) = stitch_and_scale_monitors(&[frame])?;
+                        let encoded = encode_webp_under_limit(&canvas, count)?;
+                        return Ok(CaptureOutcome::Captured(encoded));
+                    }
+                }
                 return match classify_capture_error(&msg) {
                     Some(DisplayState::ScreenLocked) => Ok(CaptureOutcome::ScreenLocked {
                         monitor_count: total_monitors,
