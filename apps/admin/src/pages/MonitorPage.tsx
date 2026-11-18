@@ -25,6 +25,7 @@ import {
   formatDeviceLabel,
   formatDurationHm,
   formatDurationHms,
+  formatTimeString12h,
   getInitials,
   safeFormatTimezoneParts,
 } from "../lib/format";
@@ -576,7 +577,7 @@ export function MonitorPage() {
                             </div>
                             <p className="text-xs font-semibold text-amber-900">
                               {latest?.capture_status === "screen_locked"
-                                ? `Screen locked at ${latest.local_time}`
+                                ? `Screen locked at ${formatTimeString12h(latest.local_time)}`
                                 : "Screen currently locked"}
                             </p>
                             <p className="text-[11px] text-amber-800/80">
@@ -600,14 +601,14 @@ export function MonitorPage() {
                                 captured_at: latest.captured_at,
                                 local_date: latest.local_date,
                                 local_hour: latest.local_hour,
-                                local_time: latest.local_time,
+                                local_time: formatTimeString12h(latest.local_time),
                                 image_endpoint: latest.image_endpoint,
                                 presigned_url: latest.presigned_url,
                                 presigned_url_expires_at:
                                   latest.presigned_url_expires_at,
                               })
                             }
-                            aria-label={`Open latest screenshot of ${emp.name} captured at ${latest.local_time}`}
+                            aria-label={`Open latest screenshot of ${emp.name} captured at ${formatTimeString12h(latest.local_time)}`}
                             className="group relative block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-2"
                           >
                             <SecureScreenshotImage
@@ -622,7 +623,7 @@ export function MonitorPage() {
                             />
                             <div className="flex items-center justify-between bg-slate-900/80 px-2.5 py-1 text-[11px] text-slate-100">
                               <span className="font-mono tabular-nums">
-                                {latest.local_date} {latest.local_time}
+                                {latest.local_date} {formatTimeString12h(latest.local_time)}
                               </span>
                               <span>
                                 {latest.capture_type === "on_demand"

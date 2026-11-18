@@ -23,7 +23,12 @@ import { useAuth } from "../context/AuthContext";
 import { useRealtime } from "../context/RealtimeContext";
 import { useToast } from "../context/ToastContext";
 import { adminApi, ApiClientError } from "../lib/api";
-import { formatBytesKb, getExpiryInfo } from "../lib/format";
+import {
+  formatBytesKb,
+  formatHourRange12h,
+  formatTimeString12h,
+  getExpiryInfo,
+} from "../lib/format";
 import type { LightboxScreenshot, ScreenshotSummaryResponse } from "../types/api";
 
 type GalleryFilter = "all" | "random" | "on_demand" | "screen_locked";
@@ -701,7 +706,7 @@ export function ScreenshotsPage() {
                   </option>
                   {(summary?.hours ?? []).map((h) => (
                     <option key={h.hour} value={h.hour}>
-                      {h.hour}:00 – {h.hour}:59 ({h.count})
+                      {formatHourRange12h(h.hour)} ({h.count})
                     </option>
                   ))}
                 </select>
@@ -793,7 +798,7 @@ export function ScreenshotsPage() {
                             ) : (
                               <ChevronDown className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
                             )}
-                            {hourGroup.hour}:00 – {hourGroup.hour}:59 ({tzDisplay})
+                            {formatHourRange12h(hourGroup.hour)} ({tzDisplay})
                           </span>
                           <span className="text-slate-600 tabular-nums">
                             {hourGroup.items.length} event
@@ -828,7 +833,7 @@ export function ScreenshotsPage() {
                                         type="checkbox"
                                         checked={isSelected}
                                         onChange={() => toggleSelectId(item.id)}
-                                        aria-label={`Select screenshot from ${item.employee_name} at ${item.local_time}`}
+                                        aria-label={`Select screenshot from ${item.employee_name} at ${formatTimeString12h(item.local_time)}`}
                                         className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600"
                                       />
                                     </label>
@@ -876,7 +881,7 @@ export function ScreenshotsPage() {
                                       <button
                                         type="button"
                                         onClick={() => setLightboxId(item.id)}
-                                        aria-label={`Inspect screenshot of ${item.employee_name} at ${item.local_time}`}
+                                        aria-label={`Inspect screenshot of ${item.employee_name} at ${formatTimeString12h(item.local_time)}`}
                                         className="block w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-600"
                                       >
                                         <SecureScreenshotImage
@@ -886,7 +891,7 @@ export function ScreenshotsPage() {
                                           presignedUrlExpiresAt={
                                             item.presigned_url_expires_at
                                           }
-                                          alt={`${item.employee_name} screenshot at ${item.local_date} ${item.local_time}`}
+                                          alt={`${item.employee_name} screenshot at ${item.local_date} ${formatTimeString12h(item.local_time)}`}
                                           aspectClassName="aspect-video"
                                           loading="lazy"
                                         />
@@ -903,7 +908,7 @@ export function ScreenshotsPage() {
                                       <button
                                         type="button"
                                         onClick={() => setSingleDeleteTarget(item)}
-                                        aria-label={`Delete screenshot from ${item.employee_name} at ${item.local_time}`}
+                                        aria-label={`Delete screenshot from ${item.employee_name} at ${formatTimeString12h(item.local_time)}`}
                                         className="rounded-md p-1 text-slate-500 hover:bg-rose-50 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-600"
                                       >
                                         <Trash2
@@ -916,7 +921,7 @@ export function ScreenshotsPage() {
 
                                     <div className="flex flex-wrap items-center justify-between gap-1 text-xs text-slate-600">
                                       <span className="font-mono font-medium text-slate-800 tabular-nums">
-                                        {item.local_time}
+                                        {formatTimeString12h(item.local_time)}
                                       </span>
                                       {!isLocked ? (
                                         <span className="tabular-nums">
@@ -1073,8 +1078,8 @@ export function ScreenshotsPage() {
                 </span>
                 &apos;s screenshot from{" "}
                 <span className="font-mono text-xs font-semibold text-slate-800 tabular-nums">
-                  {singleDeleteTarget?.local_date} {singleDeleteTarget?.local_time}{" "}
-                  {tzDisplay}
+                  {singleDeleteTarget?.local_date}{" "}
+                  {formatTimeString12h(singleDeleteTarget?.local_time)} {tzDisplay}
                 </span>{" "}
                 from both storage and database logs. This action cannot be undone.
               </p>

@@ -114,15 +114,58 @@ export function formatDeviceLabel(
   return `${osLabel} · ${archLabel}`;
 }
 
+export function formatTime12h(
+  hour24: number | string,
+  minute: number | string = "00",
+  second?: number | string
+): string {
+  const h = Number(hour24);
+  if (!Number.isFinite(h) || h < 0 || h > 23) {
+    return `${String(hour24).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  }
+  const period = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  const hh = String(h12).padStart(2, "0");
+  const mm = String(minute).padStart(2, "0");
+  if (second !== undefined) {
+    const ss = String(second).padStart(2, "0");
+    return `${hh}:${mm}:${ss} ${period}`;
+  }
+  return `${hh}:${mm} ${period}`;
+}
+
+export function formatTimeString12h(time24: string | null | undefined): string {
+  if (!time24) return "";
+  const trimmed = time24.trim();
+  if (/\b(AM|PM)\b/i.test(trimmed)) return trimmed;
+  const match = /^([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/.exec(trimmed);
+  if (!match) return time24;
+  return formatTime12h(Number(match[1]), match[2]!, match[3]);
+}
+
+export function formatHourRange12h(hour24: string): string {
+  const h = Number(hour24);
+  if (!Number.isFinite(h) || h < 0 || h > 23) {
+    return `${hour24}:00 – ${hour24}:59`;
+  }
+  return `${formatTime12h(h, "00")} – ${formatTime12h(h, "59")}`;
+}
+
 export function safeFormatTimezoneParts(
   date: Date | number | string,
   timeZone: string = DEFAULT_COMPANY_TIMEZONE
 ) {
+  let parts;
   try {
-    return formatDatePartsInTimezone(date, timeZone);
+    parts = formatDatePartsInTimezone(date, timeZone);
   } catch {
-    return formatDatePartsInTimezone(date, "UTC");
+    parts = formatDatePartsInTimezone(date, "UTC");
   }
+  return {
+    ...parts,
+    timeString24: parts.timeString,
+    timeString: formatTime12h(parts.hour, parts.minute, parts.second),
+  };
 }
 
 export function formatLocalDateTime(
