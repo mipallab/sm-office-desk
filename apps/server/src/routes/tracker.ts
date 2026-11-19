@@ -322,7 +322,7 @@ export function registerTrackerRoutes(
         throw new AppError(
           413,
           "PAYLOAD_TOO_LARGE",
-          "Uploaded screenshot exceeds the 512 KB maximum limit"
+          "Uploaded screenshot exceeds the 2 MB maximum limit"
         );
       }
 

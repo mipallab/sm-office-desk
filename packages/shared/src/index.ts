@@ -14,10 +14,10 @@ export const RANDOM_CAPTURE_MAX_SECONDS = 1800 as const;
 export const CAPTURE_NOW_COOLDOWN_SECONDS = 5 as const;
 export const CAPTURE_NOW_TIMEOUT_SECONDS = 15 as const;
 export const PRESIGNED_URL_TTL_SECONDS = 300 as const;
-export const MAX_SCREENSHOT_WIDTH_PX = 1440 as const;
-export const MAX_ULTRAWIDE_SCREENSHOT_WIDTH_PX = 1600 as const;
-export const WEBP_QUALITY = 70 as const;
-export const MAX_SCREENSHOT_UPLOAD_BYTES = 524_288 as const; // 512 KB
+export const MAX_SCREENSHOT_WIDTH_PX = 1920 as const;
+export const MAX_ULTRAWIDE_SCREENSHOT_WIDTH_PX = 3840 as const;
+export const WEBP_QUALITY = 85 as const;
+export const MAX_SCREENSHOT_UPLOAD_BYTES = 2_097_152 as const; // 2 MB
 export const PURGE_BATCH_SIZE = 500 as const;
 export const DEFAULT_COMPANY_TIMEZONE = "Asia/Dhaka" as const;
 export const DEFAULT_CURRENCY_CODE = "BDT" as const;
@@ -385,7 +385,7 @@ export const UploadScreenshotMetaSchema = z
     capture_status: CaptureStatusSchema,
     request_id: z.string().uuid().nullable().optional(),
     monitor_count: z.coerce.number().int().min(0).max(16),
-    width: z.coerce.number().int().min(0).max(3840),
+    width: z.coerce.number().int().min(0).max(5760),
     height: z.coerce.number().int().min(0).max(4320),
     captured_at_client_monotonic_ms: z.coerce.number().int().nonnegative(),
   })

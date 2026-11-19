@@ -3,11 +3,12 @@ use xcap::Monitor;
 
 use crate::lock::{check_display_state, classify_capture_error, DisplayState};
 
-pub const MAX_SINGLE_WIDTH: u32 = 1440;
-pub const MAX_MULTIMONITOR_WIDTH: u32 = 1600;
+pub const MAX_SINGLE_WIDTH: u32 = 1920;
+pub const MAX_DUALMONITOR_WIDTH: u32 = 3200;
+pub const MAX_MULTIMONITOR_WIDTH: u32 = 3840;
 pub const MAX_HEIGHT_LIMIT: u32 = 4320;
-pub const DEFAULT_WEBP_QUALITY: f32 = 70.0;
-pub const MAX_WEBP_BYTES: usize = 524_288; // 512 KB
+pub const DEFAULT_WEBP_QUALITY: f32 = 85.0;
+pub const MAX_WEBP_BYTES: usize = 2_097_152; // 2 MB
 
 #[derive(Debug, Clone)]
 pub struct RawMonitorFrame {
@@ -100,12 +101,29 @@ pub fn try_linux_external_capture() -> Result<RawMonitorFrame, String> {
     Err("No Linux screenshot tool (flameshot/grim/gnome-screenshot/spectacle) succeeded".to_string())
 }
 
+fn estimate_monitor_count(raw_w: u64, raw_h: u64) -> u32 {
+    if raw_h == 0 {
+        return 1;
+    }
+    let aspect = (raw_w as f64) / (raw_h as f64);
+    if aspect >= 3.8 || (raw_w > 4096 && aspect >= 3.0) {
+        3
+    } else if aspect >= 2.3 || (raw_w > 2560 && aspect >= 2.1) {
+        2
+    } else {
+        1
+    }
+}
+
 #[cfg(target_os = "linux")]
 fn try_capture_linux_fallback() -> Option<Result<CaptureOutcome, String>> {
     let frame = try_linux_external_capture().ok()?;
+    let estimated = estimate_monitor_count(u64::from(frame.width), u64::from(frame.height));
+    let os_count = Monitor::all().map(|m| m.len() as u32).unwrap_or(0);
+    let effective_count = os_count.max(estimated);
     Some((|| {
-        let (canvas, count) = stitch_and_scale_monitors(&[frame])?;
-        let encoded = encode_webp_under_limit(&canvas, count)?;
+        let (canvas, stitched_count) = stitch_and_scale_monitors(&[frame])?;
+        let encoded = encode_webp_under_limit(&canvas, stitched_count.max(effective_count))?;
         Ok(CaptureOutcome::Captured(encoded))
     })())
 }
@@ -116,7 +134,8 @@ fn try_capture_linux_fallback() -> Option<Result<CaptureOutcome, String>> {
 }
 
 /// Captures all active displays via `xcap` (with automatic Wayland tool fallback on Linux),
-/// stitches proportionally, scales within `1440px` (single) or `1600px` (multi-monitor), and encodes WebP <= 512 KB.
+/// stitches proportionally, scales up to `1920px` (1 monitor), `3200px` (2 monitors), or
+/// `3840px` (3+ monitors), and encodes sharp WebP <= 2 MB.
 pub fn capture_all_monitors_sync() -> Result<CaptureOutcome, String> {
     match check_display_state() {
         DisplayState::ScreenLocked => {
@@ -214,8 +233,8 @@ pub fn capture_all_monitors_sync() -> Result<CaptureOutcome, String> {
 }
 
 /// Pure function that computes the bounding box of 1..N monitors (supporting negative coordinates),
-/// scales proportionally so width <= 1440px (1 monitor) or <= 1600px (2+ monitors) and height <= 4320px,
-/// and composites all monitors onto a single RGBA canvas.
+/// scales proportionally so width <= 1920px (1 monitor), <= 3200px (2 monitors), or <= 3840px (3+ monitors)
+/// and height <= 4320px using sharp bicubic Catmull-Rom resampling, and composites all monitors onto a single RGBA canvas.
 pub fn stitch_and_scale_monitors(frames: &[RawMonitorFrame]) -> Result<(RgbaImage, u32), String> {
     if frames.is_empty() {
         return Err("No monitor frames available to stitch".to_string());
@@ -251,9 +270,16 @@ pub fn stitch_and_scale_monitors(frames: &[RawMonitorFrame]) -> Result<(RgbaImag
 
     let raw_w = (max_x - min_x).max(1) as u64;
     let raw_h = (max_y - min_y).max(1) as u64;
+    let effective_monitors = if frames.len() == 1 {
+        estimate_monitor_count(raw_w, raw_h)
+    } else {
+        frames.len() as u32
+    };
 
-    let max_target_w = if frames.len() >= 2 {
+    let max_target_w = if effective_monitors >= 3 {
         MAX_MULTIMONITOR_WIDTH
+    } else if effective_monitors == 2 {
+        MAX_DUALMONITOR_WIDTH
     } else {
         MAX_SINGLE_WIDTH
     };
@@ -285,7 +311,7 @@ pub fn stitch_and_scale_monitors(frames: &[RawMonitorFrame]) -> Result<(RgbaImag
         let dst_h = ((f64::from(frame.height) * scale).round() as u32).max(1);
 
         if dst_w != frame.width || dst_h != frame.height {
-            let resized = imageops::resize(&mon_img, dst_w, dst_h, FilterType::Triangle);
+            let resized = imageops::resize(&mon_img, dst_w, dst_h, FilterType::CatmullRom);
             imageops::overlay(&mut canvas, &resized, dst_x, dst_y);
         } else {
             imageops::overlay(&mut canvas, &mon_img, dst_x, dst_y);
@@ -295,12 +321,12 @@ pub fn stitch_and_scale_monitors(frames: &[RawMonitorFrame]) -> Result<(RgbaImag
     Ok((canvas, frames.len() as u32))
 }
 
-/// Encodes RGBA canvas to WebP starting at q=70 and steps down quality / width if > 512 KB.
+/// Encodes RGBA canvas to WebP starting at q=85 and gently steps down quality / width if > 2 MB.
 pub fn encode_webp_under_limit(
     canvas: &RgbaImage,
     monitor_count: u32,
 ) -> Result<EncodedCapture, String> {
-    let quality_steps = [DEFAULT_WEBP_QUALITY, 60.0, 50.0, 40.0];
+    let quality_steps = [DEFAULT_WEBP_QUALITY, 78.0, 72.0, 65.0];
     for quality in quality_steps {
         let bytes = encode_rgba_webp(canvas, quality)?;
         if bytes.len() <= MAX_WEBP_BYTES {
@@ -313,17 +339,17 @@ pub fn encode_webp_under_limit(
         }
     }
 
-    // Fallback width step-downs if image entropy keeps WebP > 512 KB
-    for fallback_max_w in [1280_u32, 960_u32, 720_u32] {
+    // Fallback width step-downs only if image entropy still keeps WebP > 2 MB
+    for fallback_max_w in [2560_u32, 1920_u32, 1440_u32] {
         let working = if canvas.width() > fallback_max_w {
             let ratio = f64::from(fallback_max_w) / f64::from(canvas.width());
             let new_h = ((f64::from(canvas.height()) * ratio).round() as u32).max(1);
-            imageops::resize(canvas, fallback_max_w, new_h, FilterType::Triangle)
+            imageops::resize(canvas, fallback_max_w, new_h, FilterType::CatmullRom)
         } else {
             canvas.clone()
         };
 
-        for quality in [55.0_f32, 40.0_f32, 28.0_f32] {
+        for quality in [68.0_f32, 56.0_f32, 42.0_f32] {
             let bytes = encode_rgba_webp(&working, quality)?;
             if bytes.len() <= MAX_WEBP_BYTES {
                 return Ok(EncodedCapture {
@@ -336,7 +362,7 @@ pub fn encode_webp_under_limit(
         }
     }
 
-    Err("Encoded WebP exceeded 512 KB upload limit even after step-down compression".to_string())
+    Err("Encoded WebP exceeded 2 MB upload limit even after step-down compression".to_string())
 }
 
 fn encode_rgba_webp(img: &RgbaImage, quality: f32) -> Result<Vec<u8>, String> {
@@ -373,12 +399,12 @@ mod tests {
     }
 
     #[test]
-    fn single_4k_monitor_scales_to_1440px_and_encodes_valid_webp() {
+    fn single_4k_monitor_scales_to_1920px_and_encodes_valid_webp() {
         let frame = synthetic_gradient_frame(0, 0, 2560, 1440, 17);
         let (canvas, count) = stitch_and_scale_monitors(&[frame]).unwrap();
         assert_eq!(count, 1);
-        assert_eq!(canvas.width(), 1440);
-        assert_eq!(canvas.height(), 810);
+        assert_eq!(canvas.width(), 1920);
+        assert_eq!(canvas.height(), 1080);
 
         let encoded = encode_webp_under_limit(&canvas, count).unwrap();
         assert_eq!(&encoded.webp_bytes[0..4], b"RIFF");
@@ -387,14 +413,30 @@ mod tests {
     }
 
     #[test]
-    fn multi_monitor_with_negative_offset_scales_to_1600px_preserving_aspect_ratio() {
+    fn multi_monitor_with_negative_offset_scales_to_3200px_preserving_aspect_ratio() {
         let left = synthetic_gradient_frame(-1920, 0, 1920, 1080, 5);
         let right = synthetic_gradient_frame(0, 0, 2560, 1440, 99);
         let (canvas, count) = stitch_and_scale_monitors(&[left, right]).unwrap();
         assert_eq!(count, 2);
-        assert_eq!(canvas.width(), 1600);
-        // raw width = 4480, raw height = 1440 -> 1600 * (1440/4480) = 514
-        assert!((513..=515).contains(&canvas.height()));
+        assert_eq!(canvas.width(), 3200);
+        // raw width = 4480, raw height = 1440 -> 3200 * (1440/4480) = 1029
+        assert!((1028..=1030).contains(&canvas.height()));
+
+        let encoded = encode_webp_under_limit(&canvas, count).unwrap();
+        assert_eq!(&encoded.webp_bytes[0..4], b"RIFF");
+        assert_eq!(&encoded.webp_bytes[8..12], b"WEBP");
+        assert!(encoded.webp_bytes.len() <= MAX_WEBP_BYTES);
+    }
+
+    #[test]
+    fn triple_monitor_scales_to_3840px_preserving_aspect_ratio() {
+        let m1 = synthetic_gradient_frame(-1920, 0, 1920, 1080, 3);
+        let m2 = synthetic_gradient_frame(0, 0, 1920, 1080, 17);
+        let m3 = synthetic_gradient_frame(1920, 0, 1920, 1080, 77);
+        let (canvas, count) = stitch_and_scale_monitors(&[m1, m2, m3]).unwrap();
+        assert_eq!(count, 3);
+        assert_eq!(canvas.width(), 3840);
+        assert_eq!(canvas.height(), 720);
 
         let encoded = encode_webp_under_limit(&canvas, count).unwrap();
         assert_eq!(&encoded.webp_bytes[0..4], b"RIFF");

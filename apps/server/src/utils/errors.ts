@@ -122,7 +122,7 @@ export function registerErrorHandler(app: FastifyInstance): void {
         return reply.code(413).send({
           error: {
             code: "PAYLOAD_TOO_LARGE" satisfies ApiErrorCode,
-            message: "Uploaded screenshot exceeds the 512 KB maximum limit",
+            message: "Uploaded screenshot exceeds the 2 MB maximum limit",
           },
         });
       }

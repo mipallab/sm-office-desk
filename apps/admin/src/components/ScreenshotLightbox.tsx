@@ -29,7 +29,7 @@ import { Modal } from "./Modal";
 import { SecureScreenshotImage } from "./SecureScreenshotImage";
 
 const MIN_ZOOM = 1;
-const MAX_ZOOM = 5;
+const MAX_ZOOM = 8;
 const ZOOM_STEP = 0.5;
 
 interface PanOffset {
@@ -149,7 +149,7 @@ export function ScreenshotLightbox({
     const imgEl = viewport?.querySelector("img");
     if (screenshot && imgEl && imgEl.offsetWidth > 0 && screenshot.width > 0) {
       const ratio = screenshot.width / imgEl.offsetWidth;
-      const targetZoom = clampZoom(Math.max(ratio, 1.5));
+      const targetZoom = clampZoom(Math.max(ratio, 1.25));
       setZoom(targetZoom);
       setPan({ x: 0, y: 0 });
       return;
