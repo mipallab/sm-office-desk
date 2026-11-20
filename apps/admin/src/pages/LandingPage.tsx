@@ -21,8 +21,8 @@ import {
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
-const RELEASE_TAG = "desktop-v0.1.2";
-const RELEASE_VERSION = "0.1.2";
+const RELEASE_TAG = "desktop-v0.1.3";
+const RELEASE_VERSION = "0.1.3";
 const RELEASE_BASE_URL = `https://github.com/mipallab/sm-office-desk/releases/download/${RELEASE_TAG}`;
 const RELEASE_PAGE_URL = `https://github.com/mipallab/sm-office-desk/releases/tag/${RELEASE_TAG}`;
 

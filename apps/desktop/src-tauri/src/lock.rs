@@ -150,8 +150,11 @@ pub fn open_os_permission_settings() -> Result<(), String> {
 
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         Command::new("cmd")
-            .args(["/C", "start", "ms-settings:privacy-location"])
+            .args(["/C", "start", "", "ms-settings:privacy-location"])
+            .creation_flags(CREATE_NO_WINDOW)
             .spawn()
             .map_err(|e| format!("Failed to open Windows Settings: {e}"))?;
         Ok(())

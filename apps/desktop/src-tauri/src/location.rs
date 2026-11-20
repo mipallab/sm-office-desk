@@ -108,25 +108,60 @@ async fn try_os_native_location() -> Option<(f64, f64, f64)> {
     }
 }
 
+#[cfg(any(target_os = "windows", test))]
+fn encode_powershell_command(script: &str) -> String {
+    use base64::Engine as _;
+    let utf16_le: Vec<u8> = script
+        .encode_utf16()
+        .flat_map(|unit| unit.to_le_bytes())
+        .collect();
+    base64::engine::general_purpose::STANDARD.encode(utf16_le)
+}
+
 #[cfg(target_os = "windows")]
 async fn try_windows_geolocator() -> Option<(f64, f64, f64)> {
+    // Win32 CREATE_NO_WINDOW prevents Windows Console / Windows Terminal from flashing
+    // when this GUI subsystem app spawns PowerShell in the background.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
     let script = r#"
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
+$asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
+    $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1'
+})[0]
+Function Await($WinRtTask, $ResultType) {
+    $asTask = $asTaskGeneric.MakeGenericMethod($ResultType)
+    $netTask = $asTask.Invoke($null, @($WinRtTask))
+    $netTask.Wait(-1) | Out-Null
+    $netTask.Result
+}
 $null = [Windows.Devices.Geolocation.Geolocator, Windows.Devices.Geolocation, ContentType=WindowsRuntime]
-$access = [Windows.Devices.Geolocation.Geolocator]::RequestAccessAsync().GetAwaiter().GetResult()
+$access = Await ([Windows.Devices.Geolocation.Geolocator]::RequestAccessAsync()) ([Windows.Devices.Geolocation.GeolocationAccessStatus])
 if ($access -ne [Windows.Devices.Geolocation.GeolocationAccessStatus]::Allowed) { exit 2 }
 $geo = New-Object Windows.Devices.Geolocation.Geolocator
-$pos = $geo.GetGeopositionAsync().GetAwaiter().GetResult()
+$pos = Await ($geo.GetGeopositionAsync([TimeSpan]::FromMinutes(5), [TimeSpan]::FromSeconds(6))) ([Windows.Devices.Geolocation.Geoposition])
 $coord = $pos.Coordinate
-Write-Output ("{0},{1},{2}" -f $coord.Point.Position.Latitude, $coord.Point.Position.Longitude, $coord.Accuracy)
+$inv = [System.Globalization.CultureInfo]::InvariantCulture
+Write-Output ([string]::Format($inv, '{0},{1},{2}', $coord.Point.Position.Latitude, $coord.Point.Position.Longitude, $coord.Accuracy))
 "#;
 
-    let fut = tokio::process::Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", script])
-        .output();
+    let encoded = encode_powershell_command(script);
+    let mut cmd = tokio::process::Command::new("powershell");
+    cmd.args([
+        "-NoProfile",
+        "-NonInteractive",
+        "-WindowStyle",
+        "Hidden",
+        "-EncodedCommand",
+        &encoded,
+    ])
+    .stdin(std::process::Stdio::null())
+    .creation_flags(CREATE_NO_WINDOW)
+    .kill_on_drop(true);
 
-    let output = tokio::time::timeout(Duration::from_secs(4), fut)
+    let output = tokio::time::timeout(Duration::from_secs(10), cmd.output())
         .await
         .ok()?
         .ok()?;
@@ -368,5 +403,12 @@ mod tests {
                 other => panic!("Expected Disabled outcome, got {:?}", other),
             }
         }
+    }
+
+    #[test]
+    fn encodes_powershell_command_as_utf16le_base64() {
+        // "Write-Output 1" in UTF-16LE base64
+        let encoded = encode_powershell_command("Write-Output 1");
+        assert_eq!(encoded, "VwByAGkAdABlAC0ATwB1AHQAcAB1AHQAIAAxAA==");
     }
 }

@@ -80,6 +80,7 @@ pub struct AppController {
     pub ws_outbound_tx: Mutex<Option<mpsc::UnboundedSender<DesktopWsOutbound>>>,
     pub ws_epoch_tx: watch::Sender<u64>,
     pub last_heartbeat_at: Mutex<Option<Instant>>,
+    pub heartbeat_lock: Arc<Mutex<()>>,
     pub flush_in_progress: AtomicBool,
     pub is_tracking_atomic: AtomicBool,
 }
@@ -103,6 +104,7 @@ impl AppController {
             ws_outbound_tx: Mutex::new(None),
             ws_epoch_tx,
             last_heartbeat_at: Mutex::new(None),
+            heartbeat_lock: Arc::new(Mutex::new(())),
             flush_in_progress: AtomicBool::new(false),
             is_tracking_atomic: AtomicBool::new(false),
         }))
@@ -676,6 +678,11 @@ async fn resolve_effective_location(
 }
 
 async fn perform_heartbeat(app: &AppHandle<Wry>, controller: &Arc<AppController>) {
+    let _hb_guard = controller.heartbeat_lock.lock().await;
+    perform_heartbeat_locked(app, controller).await;
+}
+
+async fn perform_heartbeat_locked(app: &AppHandle<Wry>, controller: &Arc<AppController>) {
     let (is_tracking, session_id, screen_locked) = {
         let guard = controller.state.lock().await;
         (guard.is_tracking, guard.session_id.clone(), guard.screen_locked)
@@ -1059,20 +1066,23 @@ async fn run_tracker_ticker(app: AppHandle<Wry>, controller: Arc<AppController>)
                 });
             }
 
-            // Monotonic 60s heartbeat + location consent check.
-            let hb_due = {
-                let hb_guard = controller.last_heartbeat_at.lock().await;
-                match *hb_guard {
-                    None => true,
-                    Some(prev) => prev.elapsed() >= Duration::from_secs(HEARTBEAT_INTERVAL_SECONDS),
+            // Monotonic 60s heartbeat + location consent check (never overlap in-flight heartbeats).
+            if let Ok(hb_guard) = controller.heartbeat_lock.clone().try_lock_owned() {
+                let hb_due = {
+                    let last_guard = controller.last_heartbeat_at.lock().await;
+                    match *last_guard {
+                        None => true,
+                        Some(prev) => prev.elapsed() >= Duration::from_secs(HEARTBEAT_INTERVAL_SECONDS),
+                    }
+                };
+                if hb_due {
+                    let app_hb = app.clone();
+                    let ctrl_hb = controller.clone();
+                    tokio::spawn(async move {
+                        let _hb_guard = hb_guard;
+                        perform_heartbeat_locked(&app_hb, &ctrl_hb).await;
+                    });
                 }
-            };
-            if hb_due {
-                let app_hb = app.clone();
-                let ctrl_hb = controller.clone();
-                tokio::spawn(async move {
-                    perform_heartbeat(&app_hb, &ctrl_hb).await;
-                });
             }
 
             let _ = emit_snapshot_and_sync_tray(&app, &controller).await;
@@ -1107,7 +1117,7 @@ async fn apply_start_session_success(
     };
 
     *controller.scheduler.lock().await = Some(MonotonicCaptureScheduler::start(Instant::now()));
-    *controller.last_heartbeat_at.lock().await = None;
+    *controller.last_heartbeat_at.lock().await = Some(Instant::now());
     controller.bump_ws_epoch();
 
     // Probe OS capture permissions in background so banner guides macOS/Wayland users promptly.
@@ -1267,6 +1277,11 @@ async fn set_location_consent_internal(
 
     let snap = emit_snapshot_and_sync_tray(app, controller).await;
 
+    if was_tracking {
+        perform_heartbeat(app, controller).await;
+        return Ok(emit_snapshot_and_sync_tray(app, controller).await);
+    }
+
     if enabled {
         let (_, status) = resolve_effective_location(controller).await;
         {
@@ -1275,11 +1290,6 @@ async fn set_location_consent_internal(
                 guard.location = status;
             }
         }
-    }
-
-    if was_tracking {
-        perform_heartbeat(app, controller).await;
-        return Ok(emit_snapshot_and_sync_tray(app, controller).await);
     }
 
     let _ = snap;
@@ -1516,16 +1526,14 @@ async fn set_ip_fallback_opt_in(
         guard.is_tracking
     };
 
-    if opt_in {
+    if is_tracking {
+        perform_heartbeat(&app, &ctrl).await;
+    } else if opt_in {
         let (_, status) = resolve_effective_location(&ctrl).await;
         let mut guard = ctrl.state.lock().await;
         if guard.persisted.location_enabled {
             guard.location = status;
         }
-    }
-
-    if is_tracking {
-        perform_heartbeat(&app, &ctrl).await;
     }
 
     Ok(emit_snapshot_and_sync_tray(&app, &ctrl).await)
